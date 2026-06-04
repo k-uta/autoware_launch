@@ -31,6 +31,13 @@ def relative_within(path: Path, root: Path) -> Optional[Path]:
         return None
 
 
+def config_root_of(path: Path) -> Path:
+    for root in CONFIG_ROOTS:
+        if root == path or root in path.parents:
+            return root
+    return path.parent
+
+
 def split_env(name: str) -> List[str]:
     return os.environ.get(name, "").split()
 
@@ -57,13 +64,13 @@ def build_comment(problems) -> str:
         "",
         "This PR changes parameter files in only one config directory. "
         "`autoware_launch` keeps its config directories in sync, so please make "
-        "the same change in the other directory (same relative path):",
+        "the same change to the same relative path in the corresponding directory:",
         "",
-        "| Operation | File |",
-        "| --- | --- |",
+        "| Operation | File | Corresponding directory |",
+        "| --- | --- | --- |",
     ]
-    for op, src, _counterpart in problems:
-        body.append(f"| {OP_LABELS.get(op, op)} | `{src}` |")
+    for op, src, counterpart in problems:
+        body.append(f"| {OP_LABELS.get(op, op)} | `{src}` | `{config_root_of(counterpart)}` |")
     body += [
         "",
         "If the divergence is intentional, add the `ignore-config-sync` label "
