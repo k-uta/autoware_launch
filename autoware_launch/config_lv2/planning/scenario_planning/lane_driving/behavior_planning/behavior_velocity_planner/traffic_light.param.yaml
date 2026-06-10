@@ -5,4 +5,4 @@
       tl_state_timeout: 1.0
       external_tl_state_timeout: 1.0
       yellow_lamp_period: 2.75
-      enable_pass_judge: true
+      enable_pass_judge: false
