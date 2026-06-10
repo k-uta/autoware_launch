@@ -1,4 +1,17 @@
 #!/usr/bin/env python3
+"""Generate human-readable markdown diffs between two config directories.
+
+Backend for the ``config-diff`` GitHub Actions workflow. It compares two
+directories on a single checkout with a plain file-by-file diff (not ``git
+diff``) and writes one markdown file per top-level component (``control``,
+``localization``, ...) plus a portal ``README.md`` that lists the differing
+files and links each one to its detailed diff.
+
+Paths are resolved relative to ``--base-dir`` (default ``autoware_launch``), so
+``config`` means ``autoware_launch/config``. Exits non-zero if either directory
+is missing, so the workflow fails on an invalid ``--config-dir-2``.
+"""
+
 import argparse
 import dataclasses
 from datetime import datetime
@@ -12,47 +25,27 @@ from typing import Dict
 from typing import List
 from typing import Set
 
-"""
-Generate human-readable diffs between two config directories on the same branch.
-
-This is the backend for the `config-diff` GitHub Actions workflow. Unlike
-`launch_diff_tracker.py` (which runs `git diff` between two branches of the same
-directory), it performs a plain file-by-file diff between two directories on a
-single checkout -- the branch the workflow runs on is already the branch being
-compared, so there is no branch argument.
-
-It walks both directory trees and writes one markdown file per top-level
-component (`control`, `localization`, ... matching the layout under
-`autoware_launch/config`) plus a portal `README.md` that lists, per component,
-the files that differ and links each one to its detailed diff section.
-
-Paths passed to `--config-dir-1` / `--config-dir-2` are resolved relative to
-`--base-dir` (default `autoware_launch`), so `config` means
-`autoware_launch/config`. The script exits non-zero if either directory does not
-exist, which lets the workflow fail on an invalid `--config-dir-2`.
-"""
-
-# Operations framed as the baseline (a) -> target (b) direction.
-OP_ADDED = "added"  # present only in dir2 (target)
-OP_DELETED = "deleted"  # present only in dir1 (baseline)
+# File operations, framed as the baseline (a) -> target (b) direction.
+OP_ADDED = "added"  # only in dir2 (target)
+OP_DELETED = "deleted"  # only in dir1 (baseline)
 OP_MODIFIED = "modified"
 
-# Display labels mirror the check-config-sync bot's design (emoji + label).
+# Emoji labels, matching the check-config-sync bot.
 OP_LABELS = {
     OP_ADDED: "✨ Added",
     OP_DELETED: "🗑️ Deleted",
     OP_MODIFIED: "✏️ Modified",
 }
 
-ROOT_COMPONENT = "(root)"  # pseudo-component for files directly under the config dir
+ROOT_COMPONENT = "(root)"  # files directly under the config dir
 
 
 @dataclasses.dataclass
 class FileDiff:
-    operation: str  # "added", "deleted" or "modified"
-    rel_path: Path  # path relative to the config directory
+    operation: str
+    rel_path: Path  # relative to the config directory
     diff: str  # unified diff text
-    anchor: str = ""  # GitHub heading anchor in the component markdown
+    anchor: str = ""  # heading anchor in the component markdown
 
 
 def op_label(operation: str) -> str:
@@ -73,11 +66,11 @@ def set_output(key: str, value: str) -> None:
 
 
 def github_anchor(text: str, seen: Dict[str, int]) -> str:
-    """Return the GitHub-style heading anchor for `text`, deduplicated via `seen`.
+    """Slugify ``text`` into a GitHub heading anchor, deduplicated via ``seen``.
 
-    GitHub lowercases the text, drops characters that are not word characters,
-    spaces, or hyphens (so `/` and `.` are removed, `_` is kept), and turns
-    spaces into hyphens. Duplicate slugs get an `-1`, `-2`, ... suffix.
+    Mirrors GitHub: lowercase, drop characters other than word/space/hyphen (so
+    ``/`` and ``.`` go, ``_`` stays), spaces to hyphens, and a ``-1``, ``-2``,
+    ... suffix on duplicates.
     """
     slug = text.strip().lower()
     slug = re.sub(r"[^\w\s-]", "", slug)
@@ -88,7 +81,7 @@ def github_anchor(text: str, seen: Dict[str, int]) -> str:
 
 
 def list_files(root: Path) -> Set[Path]:
-    return {p.relative_to(root) for p in root.rglob("*") if p.is_file()}
+    return {path.relative_to(root) for path in root.rglob("*") if path.is_file()}
 
 
 def read_lines(path: Path) -> List[str]:
@@ -98,28 +91,29 @@ def read_lines(path: Path) -> List[str]:
 
 
 def component_of(rel_path: Path) -> str:
-    parts = rel_path.parts
-    return parts[0] if len(parts) > 1 else ROOT_COMPONENT
+    return rel_path.parts[0] if len(rel_path.parts) > 1 else ROOT_COMPONENT
 
 
 def component_filename(component: str) -> str:
     return "root.md" if component == ROOT_COMPONENT else f"{component}.md"
 
 
-def collect_diffs(dir1: Path, dir2: Path, label1: str, label2: str) -> Dict[str, List[FileDiff]]:
-    """Compare `dir1` and `dir2` and group differing files by component."""
-    all_files = sorted(list_files(dir1) | list_files(dir2))
+def count_files(components: Dict[str, List[FileDiff]]) -> int:
+    return sum(len(entries) for entries in components.values())
 
+
+def collect_diffs(dir1: Path, dir2: Path, label1: str, label2: str) -> Dict[str, List[FileDiff]]:
+    """Compare ``dir1`` and ``dir2`` and group the differing files by component."""
     components: Dict[str, List[FileDiff]] = {}
-    for rel in all_files:
+    for rel in sorted(list_files(dir1) | list_files(dir2)):
         path1, path2 = dir1 / rel, dir2 / rel
         lines1, lines2 = read_lines(path1), read_lines(path2)
         if lines1 == lines2:
-            continue  # identical, nothing to report
+            continue
 
-        if path1.is_file() and not path2.is_file():
+        if not path2.is_file():
             operation = OP_DELETED
-        elif path2.is_file() and not path1.is_file():
+        elif not path1.is_file():
             operation = OP_ADDED
         else:
             operation = OP_MODIFIED
@@ -138,7 +132,7 @@ def collect_diffs(dir1: Path, dir2: Path, label1: str, label2: str) -> Dict[str,
 
 
 def assign_anchors(components: Dict[str, List[FileDiff]]) -> None:
-    """Fill in each FileDiff.anchor using its component's heading namespace."""
+    """Set each ``FileDiff.anchor`` within its component's heading namespace."""
     for entries in components.values():
         seen: Dict[str, int] = {}
         for entry in entries:
@@ -146,16 +140,12 @@ def assign_anchors(components: Dict[str, List[FileDiff]]) -> None:
 
 
 def build_component_markdown(
-    component: str, entries: List[FileDiff], label1: str, label2: str, timestamp: str
+    component: str, entries: List[FileDiff], label1: str, label2: str
 ) -> str:
     lines = [
         f"# {component} config diff",
         "",
-        f"- baseline (`a`): `{label1}`",
-        f"- target (`b`): `{label2}`",
-        f"- generated: {timestamp}",
-        "",
-        "[← back to portal](README.md)",
+        f"`{label1}` (a) → `{label2}` (b) · [← portal](README.md)",
         "",
     ]
     for entry in entries:
@@ -175,18 +165,14 @@ def build_component_markdown(
 def build_portal_markdown(
     components: Dict[str, List[FileDiff]], label1: str, label2: str, timestamp: str
 ) -> str:
-    file_count = sum(len(entries) for entries in components.values())
     lines = [
         "# 🔍 Config diff portal",
         "",
-        "This page compares two config directories on the same branch, framed as "
-        f"**`{label1}`** (baseline, `a`) → **`{label2}`** (target, `b`).",
+        f"`{label1}` (baseline, `a`) → `{label2}` (target, `b`)",
         "",
-        f"- baseline (`a`): `{label1}`",
-        f"- target (`b`): `{label2}`",
         f"- generated: {timestamp}",
         f"- components with differences: {len(components)}",
-        f"- files with differences: {file_count}",
+        f"- files with differences: {count_files(components)}",
         "",
     ]
 
@@ -199,12 +185,7 @@ def build_portal_markdown(
         lines.append(
             f"| [{component}]({component_filename(component)}) | {len(components[component])} |"
         )
-    lines += [
-        "",
-        "Each component below lists the files that differ. Click a file to jump to "
-        "its detailed diff in the component page.",
-        "",
-    ]
+    lines.append("")
 
     for component in sorted(components):
         md = component_filename(component)
@@ -217,7 +198,7 @@ def build_portal_markdown(
     return "\n".join(lines)
 
 
-def main() -> int:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate markdown diffs between two config directories."
     )
@@ -241,17 +222,11 @@ def main() -> int:
         default="config_diff_output",
         help="directory to write the portal and per-component markdown into.",
     )
-    parser.add_argument(
-        "--label-1",
-        default=None,
-        help="display label for config dir 1 (default: the --config-dir-1 value).",
-    )
-    parser.add_argument(
-        "--label-2",
-        default=None,
-        help="display label for config dir 2 (default: the --config-dir-2 value).",
-    )
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
 
     base = Path(args.base_dir)
     dir1, dir2 = base / args.config_dir_1, base / args.config_dir_2
@@ -260,8 +235,7 @@ def main() -> int:
             print(f"::error::{name} does not exist: {directory}")
             return 1
 
-    label1 = args.label_1 or args.config_dir_1
-    label2 = args.label_2 or args.config_dir_2
+    label1, label2 = args.config_dir_1, args.config_dir_2
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     components = collect_diffs(dir1, dir2, label1, label2)
@@ -270,11 +244,12 @@ def main() -> int:
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     for component, entries in components.items():
-        markdown = build_component_markdown(component, entries, label1, label2, timestamp)
-        (out_dir / component_filename(component)).write_text(markdown)
+        (out_dir / component_filename(component)).write_text(
+            build_component_markdown(component, entries, label1, label2)
+        )
     (out_dir / "README.md").write_text(build_portal_markdown(components, label1, label2, timestamp))
 
-    file_count = sum(len(entries) for entries in components.values())
+    file_count = count_files(components)
     set_output("status", "diff" if components else "ok")
     set_output("component_count", str(len(components)))
     set_output("file_count", str(file_count))
@@ -283,7 +258,6 @@ def main() -> int:
         f"Compared {dir1} vs {dir2}: "
         f"{len(components)} component(s), {file_count} file(s) with differences."
     )
-    print(f"Output written to {out_dir}")
     return 0
 
 

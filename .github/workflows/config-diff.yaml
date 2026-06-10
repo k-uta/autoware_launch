@@ -1,9 +1,8 @@
 name: config-diff
 
-# Compare two config directories on the *current* branch and publish a
-# human-readable, display-only branch with one markdown file per component plus
-# a portal index. The branch the workflow runs on is the branch being compared,
-# so there is no branch input.
+# Compare two config directories on the current branch and publish a display-only
+# branch with one markdown file per component plus a portal index. The branch the
+# workflow runs on is the branch being compared, so there is no branch input.
 
 on:
   workflow_dispatch:
@@ -40,7 +39,7 @@ jobs:
           CONFIG_DIR_2: ${{ inputs.config_dir_2 }}
           OUTPUT_DIR: ${{ runner.temp }}/config_diff
         run: |
-          # Fails (non-zero exit) if either config directory is invalid.
+          # Exits non-zero (failing the job) if either config directory is invalid.
           python3 .github/scripts/config_diff_tracker.py \
             --config-dir-1 "${CONFIG_DIR_1}" \
             --config-dir-2 "${CONFIG_DIR_2}" \
@@ -53,21 +52,15 @@ jobs:
           CONFIG_DIR_1: ${{ inputs.config_dir_1 }}
           CONFIG_DIR_2: ${{ inputs.config_dir_2 }}
           OUT: ${{ steps.gen.outputs.out }}
-          STATUS: ${{ steps.gen.outputs.status }}
           COMPONENT_COUNT: ${{ steps.gen.outputs.component_count }}
           FILE_COUNT: ${{ steps.gen.outputs.file_count }}
         run: |
           set -euo pipefail
 
           sanitize() { echo "$1" | tr '/ ' '--'; }
-          src_ref="${GITHUB_REF_NAME}"
-          d1="$(sanitize "${CONFIG_DIR_1}")"
-          d2="$(sanitize "${CONFIG_DIR_2}")"
-          src="$(sanitize "${src_ref}")"
-          display_branch="tmp/config-diff/${src}/${d1}-vs-${d2}"
+          display_branch="tmp/config-diff/$(sanitize "${GITHUB_REF_NAME}")/$(sanitize "${CONFIG_DIR_1}")-vs-$(sanitize "${CONFIG_DIR_2}")"
 
-          # Build the display branch in a clean directory so it only ever
-          # contains the generated markdown (display-only branch).
+          # Assemble the branch in a clean directory so it only holds the markdown.
           work="${RUNNER_TEMP}/display"
           rm -rf "${work}"
           mkdir -p "${work}"
@@ -79,16 +72,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .
-          git commit -q -m "config-diff: ${CONFIG_DIR_1} vs ${CONFIG_DIR_2} on ${src_ref}"
-
-          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push -f "${remote}" "${display_branch}"
+          git commit -q -m "config-diff: ${CONFIG_DIR_1} vs ${CONFIG_DIR_2} on ${GITHUB_REF_NAME}"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${display_branch}"
 
           portal_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${display_branch}/README.md"
           {
             echo "## 🔍 Config diff published"
             echo ""
-            echo "Comparison: \`${CONFIG_DIR_1}\` vs \`${CONFIG_DIR_2}\` (source branch: \`${src_ref}\`)"
+            echo "Comparison: \`${CONFIG_DIR_1}\` vs \`${CONFIG_DIR_2}\` (source branch: \`${GITHUB_REF_NAME}\`)"
             echo ""
             echo "- components with differences: ${COMPONENT_COUNT}"
             echo "- files with differences: ${FILE_COUNT}"
