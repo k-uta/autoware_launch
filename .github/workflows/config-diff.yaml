@@ -1,0 +1,99 @@
+name: config-diff
+
+# Compare two config directories on the *current* branch and publish a
+# human-readable, display-only branch with one markdown file per component plus
+# a portal index. The branch the workflow runs on is the branch being compared,
+# so there is no branch input.
+
+on:
+  workflow_dispatch:
+    inputs:
+      config_dir_1:
+        description: Baseline config directory, relative to autoware_launch/ (e.g. config)
+        required: true
+        type: string
+        default: config
+      config_dir_2:
+        description: Target config directory to compare against, relative to autoware_launch/ (e.g. config_lv2)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  config-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate config diff
+        id: gen
+        env:
+          CONFIG_DIR_1: ${{ inputs.config_dir_1 }}
+          CONFIG_DIR_2: ${{ inputs.config_dir_2 }}
+          OUTPUT_DIR: ${{ runner.temp }}/config_diff
+        run: |
+          # Fails (non-zero exit) if either config directory is invalid.
+          python3 .github/scripts/config_diff_tracker.py \
+            --config-dir-1 "${CONFIG_DIR_1}" \
+            --config-dir-2 "${CONFIG_DIR_2}" \
+            --output-dir "${OUTPUT_DIR}"
+          echo "out=${OUTPUT_DIR}" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish display branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONFIG_DIR_1: ${{ inputs.config_dir_1 }}
+          CONFIG_DIR_2: ${{ inputs.config_dir_2 }}
+          OUT: ${{ steps.gen.outputs.out }}
+          STATUS: ${{ steps.gen.outputs.status }}
+          COMPONENT_COUNT: ${{ steps.gen.outputs.component_count }}
+          FILE_COUNT: ${{ steps.gen.outputs.file_count }}
+        run: |
+          set -euo pipefail
+
+          sanitize() { echo "$1" | tr '/ ' '--'; }
+          src_ref="${GITHUB_REF_NAME}"
+          d1="$(sanitize "${CONFIG_DIR_1}")"
+          d2="$(sanitize "${CONFIG_DIR_2}")"
+          src="$(sanitize "${src_ref}")"
+          display_branch="tmp/config-diff/${src}/${d1}-vs-${d2}"
+
+          # Build the display branch in a clean directory so it only ever
+          # contains the generated markdown (display-only branch).
+          work="${RUNNER_TEMP}/display"
+          rm -rf "${work}"
+          mkdir -p "${work}"
+          cp -r "${OUT}/." "${work}/"
+
+          cd "${work}"
+          git init -q
+          git checkout -q -b "${display_branch}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -q -m "config-diff: ${CONFIG_DIR_1} vs ${CONFIG_DIR_2} on ${src_ref}"
+
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push -f "${remote}" "${display_branch}"
+
+          portal_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${display_branch}/README.md"
+          {
+            echo "## 🔍 Config diff published"
+            echo ""
+            echo "Comparison: \`${CONFIG_DIR_1}\` vs \`${CONFIG_DIR_2}\` (source branch: \`${src_ref}\`)"
+            echo ""
+            echo "- components with differences: ${COMPONENT_COUNT}"
+            echo "- files with differences: ${FILE_COUNT}"
+            echo ""
+            echo "Display branch: \`${display_branch}\`"
+            echo ""
+            echo "[Open portal](${portal_url})"
+          } >> "${GITHUB_STEP_SUMMARY}"
