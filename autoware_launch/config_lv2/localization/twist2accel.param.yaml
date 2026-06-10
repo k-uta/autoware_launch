@@ -2,3 +2,4 @@
   ros__parameters:
     use_odom: true
     accel_lowpass_gain: 0.9
+    # config-diff demo: tuned for lv2

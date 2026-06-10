@@ -60,3 +60,4 @@
       # Setting2: tune ogm fusion parameters
       ## choose fusion method from ["overwrite", "log-odds", "dempster-shafer"]
         fusion_method: "overwrite"
+    # config-diff demo: tuned for lv2

@@ -25,3 +25,4 @@
       speed_upper_threshold: 2.0
       speed_lower_threshold: -2.0
       yaw_threshold: 0.262
+    # config-diff demo: tuned for lv2
