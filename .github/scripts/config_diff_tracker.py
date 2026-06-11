@@ -163,7 +163,11 @@ def build_component_markdown(
 
 
 def build_portal_markdown(
-    components: Dict[str, List[FileDiff]], label1: str, label2: str, timestamp: str
+    components: Dict[str, List[FileDiff]],
+    label1: str,
+    label2: str,
+    timestamp: str,
+    source_branch: str = "",
 ) -> str:
     lines = [
         "# 🔍 Config diff portal",
@@ -171,6 +175,10 @@ def build_portal_markdown(
         f"`{label1}` (baseline, `a`) → `{label2}` (target, `b`)",
         "",
         f"- generated: {timestamp}",
+    ]
+    if source_branch:
+        lines.append(f"- branch: {source_branch}")
+    lines += [
         f"- files with differences: {count_files(components)}",
         "",
     ]
@@ -221,6 +229,11 @@ def parse_args() -> argparse.Namespace:
         default="config_diff_output",
         help="directory to write the portal and per-component markdown into.",
     )
+    parser.add_argument(
+        "--source-branch",
+        default="",
+        help="branch being compared; shown in the portal when set.",
+    )
     return parser.parse_args()
 
 
@@ -246,7 +259,9 @@ def main() -> int:
         (out_dir / component_filename(component)).write_text(
             build_component_markdown(component, entries, label1, label2)
         )
-    (out_dir / "README.md").write_text(build_portal_markdown(components, label1, label2, timestamp))
+    (out_dir / "README.md").write_text(
+        build_portal_markdown(components, label1, label2, timestamp, args.source_branch)
+    )
 
     file_count = count_files(components)
     set_output("status", "diff" if components else "ok")

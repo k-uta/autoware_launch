@@ -43,7 +43,8 @@ jobs:
           python3 .github/scripts/config_diff_tracker.py \
             --config-dir-1 "${CONFIG_DIR_1}" \
             --config-dir-2 "${CONFIG_DIR_2}" \
-            --output-dir "${OUTPUT_DIR}"
+            --output-dir "${OUTPUT_DIR}" \
+            --source-branch "${GITHUB_REF_NAME}"
           echo "out=${OUTPUT_DIR}" >> "${GITHUB_OUTPUT}"
 
       - name: Publish display branch
