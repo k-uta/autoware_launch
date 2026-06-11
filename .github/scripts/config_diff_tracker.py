@@ -47,6 +47,12 @@ class FileDiff:
     diff: str  # unified diff text
     anchor: str = ""  # heading anchor in the component markdown
 
+    @property
+    def display_path(self) -> str:
+        # Path shown in component pages, with the component prefix stripped.
+        parts = self.rel_path.parts
+        return Path(*parts[1:]).as_posix() if len(parts) > 1 else self.rel_path.as_posix()
+
 
 def op_label(operation: str) -> str:
     # Non-breaking space keeps the emoji and label on one line in the table.
@@ -136,7 +142,7 @@ def assign_anchors(components: Dict[str, List[FileDiff]]) -> None:
     for entries in components.values():
         seen: Dict[str, int] = {}
         for entry in entries:
-            entry.anchor = github_anchor(entry.rel_path.as_posix(), seen)
+            entry.anchor = github_anchor(entry.display_path, seen)
 
 
 def build_component_markdown(
@@ -150,7 +156,7 @@ def build_component_markdown(
     ]
     for entry in entries:
         lines += [
-            f"## {entry.rel_path.as_posix()}",
+            f"## {entry.display_path}",
             "",
             f"**{op_label(entry.operation)}**",
             "",
@@ -198,7 +204,7 @@ def build_portal_markdown(
         md = component_filename(component)
         lines += [f"## {component}", "", "| Operation | File |", "| --- | --- |"]
         for entry in components[component]:
-            link = f"[`{entry.rel_path.as_posix()}`]({md}#{entry.anchor})"
+            link = f"[`{entry.display_path}`]({md}#{entry.anchor})"
             lines.append(f"| {op_label(entry.operation)} | {link} |")
         lines.append("")
 
