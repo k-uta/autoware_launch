@@ -1,0 +1,88 @@
+name: check-config-sync
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - unlabeled
+    paths:
+      - autoware_launch/**
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check-config-sync:
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ignore-config-sync') }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Check config sync
+        id: check
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: python3 .github/check-config-sync.py
+
+      - name: Post comment
+        if: ${{ always() && steps.check.outputs.status == 'mismatch' }}
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: check-config-sync
+          message: ${{ steps.check.outputs.comment }}
+
+      - name: Resolve comment
+        if: ${{ always() && steps.check.outputs.status == 'ok' }}
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: check-config-sync
+          delete: true
+
+  apply-config-sync:
+    runs-on: ubuntu-latest
+    if: ${{ contains(github.event.pull_request.labels.*.name, 'apply-config-sync') && !contains(github.event.pull_request.labels.*.name, 'ignore-config-sync') }}
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply config sync
+        id: apply
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 .github/check-config-sync.py --apply
+
+      - name: Commit and push
+        id: commit
+        if: ${{ steps.apply.outputs.applied == 'true' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- autoware_launch
+          if git diff --cached --quiet; then
+            echo "Nothing to commit; configs already in sync."
+          else
+            git commit -m "chore(config-sync): mirror changes to the corresponding config directory"
+            git push
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post comment
+        if: ${{ steps.commit.outputs.pushed == 'true' }}
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: apply-config-sync
+          message: ${{ steps.apply.outputs.comment }}
