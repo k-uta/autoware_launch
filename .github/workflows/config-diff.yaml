@@ -41,11 +41,15 @@ permissions:
 jobs:
   config-diff:
     runs-on: ubuntu-latest
+    env:
+      CONFIG_DIR_1: ${{ inputs.config_dir_1 }}
+      CONFIG_DIR_2: ${{ inputs.config_dir_2 }}
+      BRANCH: ${{ inputs.ref || github.ref_name }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref_name }}
+          ref: ${{ env.BRANCH }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -54,29 +58,19 @@ jobs:
 
       - name: Generate config diff
         id: gen
-        env:
-          CONFIG_DIR_1: ${{ inputs.config_dir_1 }}
-          CONFIG_DIR_2: ${{ inputs.config_dir_2 }}
-          BRANCH: ${{ inputs.ref || github.ref_name }}
-          OUTPUT_DIR: ${{ runner.temp }}/config_diff
         run: |
           # Fails the job if either config directory is invalid.
           python3 .github/scripts/config_diff_tracker.py \
             --config-dir-1 "${CONFIG_DIR_1}" \
             --config-dir-2 "${CONFIG_DIR_2}" \
-            --output-dir "${OUTPUT_DIR}" \
+            --output-dir "${RUNNER_TEMP}/config_diff" \
             --source-branch "${BRANCH}" \
             --source-branch-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/tree/${BRANCH}"
-          echo "out=${OUTPUT_DIR}" >> "${GITHUB_OUTPUT}"
 
       - name: Publish display branch
         id: publish
         env:
           GH_TOKEN: ${{ github.token }}
-          CONFIG_DIR_1: ${{ inputs.config_dir_1 }}
-          CONFIG_DIR_2: ${{ inputs.config_dir_2 }}
-          BRANCH: ${{ inputs.ref || github.ref_name }}
-          OUT: ${{ steps.gen.outputs.out }}
           FILE_COUNT: ${{ steps.gen.outputs.file_count }}
         run: |
           set -euo pipefail
@@ -88,7 +82,7 @@ jobs:
           work="${RUNNER_TEMP}/display"
           rm -rf "${work}"
           mkdir -p "${work}"
-          cp -r "${OUT}/." "${work}/"
+          cp -r "${RUNNER_TEMP}/config_diff/." "${work}/"
 
           cd "${work}"
           git init -q
