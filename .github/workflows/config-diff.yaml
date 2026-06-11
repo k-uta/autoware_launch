@@ -1,8 +1,8 @@
 name: config-diff
 
-# Compare two config directories on the current branch and publish a display-only
-# branch with one markdown file per component plus a portal index. The branch the
-# workflow runs on is the branch being compared, so there is no branch input.
+# Compare two config directories on a branch and publish a display-only branch
+# (one markdown per component + a portal). Run via workflow_dispatch, or via
+# workflow_call (check-config-sync calls it on the merge target after a merge).
 
 on:
   workflow_dispatch:
@@ -16,9 +16,27 @@ on:
         description: Target config directory to compare against, relative to autoware_launch/ (e.g. config_lv2)
         required: true
         type: string
+  workflow_call:
+    inputs:
+      config_dir_1:
+        required: true
+        type: string
+      config_dir_2:
+        required: true
+        type: string
+      ref:
+        description: Branch to check out and compare.
+        required: true
+        type: string
+      pr_number:
+        description: PR to comment on with the portal link; empty to skip the comment.
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   config-diff:
@@ -26,6 +44,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -37,29 +57,32 @@ jobs:
         env:
           CONFIG_DIR_1: ${{ inputs.config_dir_1 }}
           CONFIG_DIR_2: ${{ inputs.config_dir_2 }}
+          BRANCH: ${{ inputs.ref || github.ref_name }}
           OUTPUT_DIR: ${{ runner.temp }}/config_diff
         run: |
-          # Exits non-zero (failing the job) if either config directory is invalid.
+          # Fails the job if either config directory is invalid.
           python3 .github/scripts/config_diff_tracker.py \
             --config-dir-1 "${CONFIG_DIR_1}" \
             --config-dir-2 "${CONFIG_DIR_2}" \
             --output-dir "${OUTPUT_DIR}" \
-            --source-branch "${GITHUB_REF_NAME}" \
-            --source-branch-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/tree/${GITHUB_REF_NAME}"
+            --source-branch "${BRANCH}" \
+            --source-branch-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/tree/${BRANCH}"
           echo "out=${OUTPUT_DIR}" >> "${GITHUB_OUTPUT}"
 
       - name: Publish display branch
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           CONFIG_DIR_1: ${{ inputs.config_dir_1 }}
           CONFIG_DIR_2: ${{ inputs.config_dir_2 }}
+          BRANCH: ${{ inputs.ref || github.ref_name }}
           OUT: ${{ steps.gen.outputs.out }}
           FILE_COUNT: ${{ steps.gen.outputs.file_count }}
         run: |
           set -euo pipefail
 
           sanitize() { echo "$1" | tr '/ ' '--'; }
-          display_branch="tmp/config-diff/$(sanitize "${GITHUB_REF_NAME}")/$(sanitize "${CONFIG_DIR_1}")-vs-$(sanitize "${CONFIG_DIR_2}")"
+          display_branch="tmp/config-diff/$(sanitize "${BRANCH}")/$(sanitize "${CONFIG_DIR_1}")-vs-$(sanitize "${CONFIG_DIR_2}")"
 
           # Assemble the branch in a clean directory so it only holds the markdown.
           work="${RUNNER_TEMP}/display"
@@ -73,14 +96,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .
-          git commit -q -m "config-diff: ${CONFIG_DIR_1} vs ${CONFIG_DIR_2} on ${GITHUB_REF_NAME}"
+          git commit -q -m "config-diff: ${CONFIG_DIR_1} vs ${CONFIG_DIR_2} on ${BRANCH}"
           git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${display_branch}"
 
           portal_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${display_branch}/README.md"
+          echo "display_branch=${display_branch}" >> "${GITHUB_OUTPUT}"
+          echo "portal_url=${portal_url}" >> "${GITHUB_OUTPUT}"
           {
             echo "## 🔍 Config diff published"
             echo ""
-            echo "Comparison: \`${CONFIG_DIR_1}\` vs \`${CONFIG_DIR_2}\` (source branch: \`${GITHUB_REF_NAME}\`)"
+            echo "Comparison: \`${CONFIG_DIR_1}\` vs \`${CONFIG_DIR_2}\` (branch: \`${BRANCH}\`)"
             echo ""
             echo "- files with differences: ${FILE_COUNT}"
             echo ""
@@ -88,3 +113,14 @@ jobs:
             echo ""
             echo "[Open portal](${portal_url})"
           } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Comment portal link on PR
+        if: ${{ inputs.pr_number != '' }}
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: config-diff
+          number: ${{ inputs.pr_number }}
+          message: |
+            🔍 The final config diff for `${{ inputs.ref }}` (`${{ inputs.config_dir_1 }}` vs `${{ inputs.config_dir_2 }}`) is ready.
+
+            See the final comparison here: [${{ steps.publish.outputs.display_branch }}](${{ steps.publish.outputs.portal_url }})

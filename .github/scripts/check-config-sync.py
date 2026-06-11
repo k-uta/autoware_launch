@@ -194,9 +194,25 @@ def main() -> int:
         action="store_true",
         help="mirror one-sided changes to the corresponding directory",
     )
+    parser.add_argument(
+        "--print-config-dirs",
+        action="store_true",
+        help="emit the existing config directories (for config-diff) and exit",
+    )
     args = parser.parse_args()
 
     config_roots = [root for root in CONFIG_ROOTS if root.is_dir()]
+
+    # Single source of the "two config dirs?" detection, reused by config-diff.
+    if args.print_config_dirs:
+        enabled = len(config_roots) >= 2
+        set_output("enabled", "true" if enabled else "false")
+        if enabled:
+            set_output("config_dir_1", config_roots[0].name)
+            set_output("config_dir_2", config_roots[1].name)
+        print(f"Detected config dirs: {[str(root) for root in config_roots]} (enabled={enabled})")
+        return 0
+
     if len(config_roots) < 2:
         print("Fewer than two config directories present; skipping.")
         set_output("status", "ok")
