@@ -1,0 +1,24 @@
+# map config diff
+
+`config` (a) → `config_lv2` (b) · [← portal](README.md)
+
+## map_projection_loader.param.yaml
+
+**🗑️ Deleted**
+
+```diff
+--- a/config/map/map_projection_loader.param.yaml
++++ b/config_lv2/map/map_projection_loader.param.yaml
+@@ -1,11 +0,0 @@
+-# This file is managed by sync-params workflow.
+-# Keys marked with '{OVERRIDE}' or '# {OVERRIDE: reason}' are persisted as variant overrides.
+-# 'reason' can be any single-line text without braces.
+-# To keep local changes, annotate fields with '# {OVERRIDE}' or '# {OVERRIDE: reason}'.
+-#
+-# Source: https://github.com/autowarefoundation/autoware_core/blob/a5563e24e31361e6a8f87a07e34cd2df3290f166/map/autoware_map_projection_loader/config/map_projection_loader.param.yaml
+-
+-/**:
+-  ros__parameters:
+-    map_projector_info_path: $(var map_projector_info_path)
+-    lanelet2_map_path: $(var lanelet2_map_path)
+```
