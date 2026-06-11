@@ -52,7 +52,6 @@ jobs:
           CONFIG_DIR_1: ${{ inputs.config_dir_1 }}
           CONFIG_DIR_2: ${{ inputs.config_dir_2 }}
           OUT: ${{ steps.gen.outputs.out }}
-          COMPONENT_COUNT: ${{ steps.gen.outputs.component_count }}
           FILE_COUNT: ${{ steps.gen.outputs.file_count }}
         run: |
           set -euo pipefail
@@ -81,7 +80,6 @@ jobs:
             echo ""
             echo "Comparison: \`${CONFIG_DIR_1}\` vs \`${CONFIG_DIR_2}\` (source branch: \`${GITHUB_REF_NAME}\`)"
             echo ""
-            echo "- components with differences: ${COMPONENT_COUNT}"
             echo "- files with differences: ${FILE_COUNT}"
             echo ""
             echo "Display branch: \`${display_branch}\`"

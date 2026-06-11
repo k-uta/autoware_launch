@@ -171,7 +171,6 @@ def build_portal_markdown(
         f"`{label1}` (baseline, `a`) → `{label2}` (target, `b`)",
         "",
         f"- generated: {timestamp}",
-        f"- components with differences: {len(components)}",
         f"- files with differences: {count_files(components)}",
         "",
     ]
@@ -251,13 +250,9 @@ def main() -> int:
 
     file_count = count_files(components)
     set_output("status", "diff" if components else "ok")
-    set_output("component_count", str(len(components)))
     set_output("file_count", str(file_count))
 
-    print(
-        f"Compared {dir1} vs {dir2}: "
-        f"{len(components)} component(s), {file_count} file(s) with differences."
-    )
+    print(f"Compared {dir1} vs {dir2}: {file_count} file(s) with differences.")
     return 0
 
 
