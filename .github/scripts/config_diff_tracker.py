@@ -174,6 +174,7 @@ def build_portal_markdown(
     label2: str,
     timestamp: str,
     source_branch: str = "",
+    source_branch_url: str = "",
 ) -> str:
     lines = [
         "# 🔍 Config diff portal",
@@ -183,7 +184,8 @@ def build_portal_markdown(
         f"- generated: {timestamp}",
     ]
     if source_branch:
-        lines.append(f"- branch: {source_branch}")
+        branch = f"[{source_branch}]({source_branch_url})" if source_branch_url else source_branch
+        lines.append(f"- branch: {branch}")
     lines += [
         f"- files with differences: {count_files(components)}",
         "",
@@ -240,6 +242,11 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="branch being compared; shown in the portal when set.",
     )
+    parser.add_argument(
+        "--source-branch-url",
+        default="",
+        help="URL of the source branch; links the branch name in the portal when set.",
+    )
     return parser.parse_args()
 
 
@@ -266,7 +273,14 @@ def main() -> int:
             build_component_markdown(component, entries, label1, label2)
         )
     (out_dir / "README.md").write_text(
-        build_portal_markdown(components, label1, label2, timestamp, args.source_branch)
+        build_portal_markdown(
+            components,
+            label1,
+            label2,
+            timestamp,
+            args.source_branch,
+            args.source_branch_url,
+        )
     )
 
     file_count = count_files(components)
